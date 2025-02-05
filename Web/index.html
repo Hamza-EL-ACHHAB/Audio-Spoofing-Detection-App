@@ -53,6 +53,15 @@
       font-size: 1.1rem;
     }
 
+    .metadata {
+      margin-top: 20px;
+      padding: 15px;
+      background-color: #f1f3f4;
+      border-radius: 5px;
+      color: #333;
+      font-size: 1.1rem;
+    }
+
     .list-group-item {
       display: flex;
       justify-content: space-between;
@@ -83,12 +92,12 @@
 <body>
   <div class="container">
     <h1>Audio Analysis API</h1>
-    <h2>Upload or Record an Audio File</h2>
+    <h2>Upload or Record Audio Files</h2>
 
-    <!-- Form for Uploading File -->
+    <!-- Form for Uploading Files -->
     <form id="upload-form" class="mb-4">
       <div class="mb-3">
-        <input type="file" id="audio-file" class="form-control" accept="audio/*" />
+        <input type="file" id="audio-file" class="form-control" accept="audio/*" multiple />
       </div>
       <button type="button" id="upload-button" class="btn btn-primary w-100">Upload & Analyze</button>
     </form>
@@ -105,8 +114,17 @@
     <p class="text-center"><strong>Recordings:</strong></p>
     <ol id="recordingsList" class="list-group"></ol>
 
+    <!-- Metadata Display -->
+    <div class="metadata mt-4">
+      <h3>File Metadata</h3>
+      <div id="metadata-display"></div>
+    </div>
+
     <!-- Response Display -->
-    <div class="response mt-4 text-center" id="response"></div>
+    <div class="response mt-4">
+      <h3>Analysis Results</h3>
+      <div id="response"></div>
+    </div>
   </div>
 
   <!-- Load Recorder.js and your script.js -->
