@@ -1,22 +1,20 @@
-# Utiliser une image de base avec Python 3.8
-FROM python:3.8-slim
+# Use an official Python runtime as the base image
+FROM python:3.11-slim
 
-# Définir le répertoire de travail dans le conteneur
+# Set the working directory in the container
 WORKDIR /app
 
-# Copier les fichiers nécessaires dans le conteneur
-COPY . .
+# Copy the requirements file into the container
+COPY requirements.txt .
 
-# Installer les dépendances système nécessaires
-RUN apt-get update && apt-get install -y \
-    libsndfile1 \
-    && rm -rf /var/lib/apt/lists/*
-
-# Installer les dépendances Python
+# Install the Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Exposer le port sur lequel l'application FastAPI écoute
+# Copy the rest of the application code
+COPY . .
+
+# Expose the port the app runs on
 EXPOSE 8000
 
-# Commande pour démarrer l'application FastAPI
+# Command to run the application
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -119,6 +119,31 @@
     <!-- Metadata Display -->
     <div class="metadata mt-4">
       <h3>File Metadata</h3>
+
+      <!-- Dropdown Filters -->
+      <div class="mb-3 d-flex flex-wrap gap-3">
+        <i>Choisir un Label</i>
+        <select id="filter-label" class="form-select">
+          <option value="">All Labels</option>
+        </select>
+        <i>Choisir un System</i>
+        <select id="filter-system" class="form-select">
+          <option value="">All Systems</option>
+        </select>
+        <i>Choisir un Codec</i>
+        <select id="filter-codec" class="form-select">
+          <option value="">All Codecs</option>
+        </select>
+        <i>Choisir un Genre</i>
+        <select id="filter-genre" class="form-select">
+          <option value="">All Genres</option>
+        </select>
+        <i>Choisir une Année</i>
+        <select id="filter-year" class="form-select">
+          <option value="">All Years</option>
+        </select>
+      </div>
+
       <div id="metadata-display"></div>
     </div>
 

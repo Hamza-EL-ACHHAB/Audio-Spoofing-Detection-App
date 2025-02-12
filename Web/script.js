@@ -13,114 +13,271 @@ let audioContext;
 
 function startAudioContext() {
     if (!audioContext) {
-        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
     } else if (audioContext.state === 'suspended') {
-        audioContext.resume().then(() => {
-            console.log('AudioContext resumed');
-        });
+      audioContext.resume().then(() => {
+        console.log('AudioContext repris');
+      });
     }
+  }
+
+// Fonction pour rééchantillonner l'audio à 16 kHz
+async function resampleAudio(blob, targetSampleRate = 16000) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const buffer = await audioContext.decodeAudioData(reader.result);
+  
+        // Créer un nouvel AudioContext avec le taux d'échantillonnage cible
+        const offlineContext = new OfflineAudioContext(
+          buffer.numberOfChannels,
+          buffer.length * (targetSampleRate / buffer.sampleRate),
+          targetSampleRate
+        );
+  
+        // Créer une source audio avec le buffer original
+        const source = offlineContext.createBufferSource();
+        source.buffer = buffer;
+  
+        // Connecter la source au contexte offline
+        source.connect(offlineContext.destination);
+        source.start();
+  
+        // Rendre l'audio
+        const resampledBuffer = await offlineContext.startRendering();
+  
+        // Convertir le buffer rééchantillonné en WAV
+        const wavBlob = bufferToWav(resampledBuffer);
+        resolve(wavBlob);
+      };
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(blob);
+    });
 }
 
-function createDownloadLink(blob, filename = 'audio.wav') {
-    if (!(blob instanceof Blob)) {
-        console.error('Invalid blob object:', blob);
-        return null;
-    }
+// Fonction pour convertir un AudioBuffer en WAV
+function bufferToWav(buffer) {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const length = buffer.length * numChannels * 2; // 2 bytes par échantillon
+  const data = new Float32Array(length);
 
-    const audioUrl = URL.createObjectURL(blob);
-    const downloadLink = document.createElement('a');
-    downloadLink.href = audioUrl;
-    downloadLink.download = filename;
-    downloadLink.textContent = `Download ${filename}`;
-    downloadLink.style.display = 'block';
-    return downloadLink;
+  // Interleave les canaux
+  for (let channel = 0; channel < numChannels; channel++) {
+    const channelData = buffer.getChannelData(channel);
+    for (let i = 0; i < channelData.length; i++) {
+      data[i * numChannels + channel] = channelData[i];
+    }
+  }
+
+  // Encoder en WAV
+  const wavBlob = encodeWAV(data, sampleRate, numChannels);
+  return wavBlob;
 }
-// Function to fetch metadata from the text file
-async function fetchMetadata() {
-  try {
-    const response = await fetch('../metadata.txt'); // Ensure correct file path
-    if (!response.ok) {
-      throw new Error('Failed to fetch metadata');
-    }
-    const text = await response.text();
-    console.log('Metadata file content:', text); // Debugging
 
-    // Split text into lines, ensuring no empty entries
-    const lines = text.split('\n').filter(line => line.trim() !== '');
-    if (lines.length < 1) {
-      throw new Error('Metadata file is empty or malformed');
-    }
+// Fonction pour encoder des données audio en WAV
+function encodeWAV(samples, sampleRate, numChannels) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const view = new DataView(buffer);
 
-    // Process metadata (handle spaces and case differences)
-    const metadata = lines.map(line => {
-      const parts = line.split(';').map(part => part.trim()); // Trim each value
-      if (parts.length === 3) {
-        return { 
-          name: parts[0].toLowerCase(), // Normalize case
-          extension: parts[1], 
-          compression: parts[2] 
-        };
-      }
-      return null; // Skip invalid lines
-    }).filter(entry => entry !== null);
+  // Écrire l'en-tête WAV
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, 36 + samples.length * 2, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // Format PCM
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * numChannels * 2, true);
+  view.setUint16(32, numChannels * 2, true);
+  view.setUint16(34, 16, true); // Bits par échantillon
+  writeString(view, 36, 'data');
+  view.setUint32(40, samples.length * 2, true);
 
-    return metadata;
-  } catch (error) {
-    console.error('Error fetching metadata:', error);
-    return [];
+  // Écrire les échantillons audio
+  floatTo16BitPCM(view, 44, samples);
+
+  return new Blob([view], { type: 'audio/wav' });
+}
+
+// Fonction utilitaire pour écrire une chaîne dans un DataView
+function writeString(view, offset, string) {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
   }
 }
 
+// Fonction utilitaire pour convertir des échantillons flottants en PCM 16 bits
+function floatTo16BitPCM(view, offset, input) {
+  for (let i = 0; i < input.length; i++, offset += 2) {
+    const s = Math.max(-1, Math.min(1, input[i]));
+    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+  }
+}
 
-// Function to display metadata in a table
+// Function to fetch metadata from the text file
+async function fetchMetadata() {
+    try {
+        const response = await fetch('../metadata.txt'); // Assurez-vous que le fichier est accessible
+        if (!response.ok) {
+            throw new Error('Failed to fetch metadata');
+        }
+        const text = await response.text();
+        console.log('Metadata file content:', text); // Debugging
+
+        // Split text into lines
+        const lines = text.split('\n').map(line => line.trim()).filter(line => line !== '');
+        
+        if (lines.length < 2) {
+            throw new Error('Metadata file is empty or malformed');
+        }
+
+        // Extract headers
+        const headers = lines[0].split(';').map(h => h.trim().toLowerCase());
+
+        // Extract data
+        const metadata = lines.slice(1).map(line => {
+            const values = line.split(';').map(value => value.trim());
+            let entry = {};
+            headers.forEach((header, index) => {
+                entry[header] = values[index] || 'N/A'; // Default to 'N/A' if missing data
+            });
+            return entry;
+        });
+
+        console.log('Parsed Metadata:', metadata); // Debugging
+        return metadata;
+    } catch (error) {
+        console.error('Error fetching metadata:', error);
+        return [];
+    }
+}
+
+function populateFilters() {
+    const predefinedValues = {
+        label: ["spoof", "genuine"],
+        system: ["bonafide"].concat(Array.from({ length: 19 }, (_, i) => `A${String(i + 1).padStart(2, '0')}`)),
+        codec: ["FLAC", "WAV", "MP3"],
+        genre: ["male", "female"],
+        year: ["2020", "2021", "2022", "2023", "2024", "2025"]
+    };
+
+    Object.keys(predefinedValues).forEach(key => {
+        populateDropdown(`filter-${key}`, predefinedValues[key]);
+    });
+}
+
+function populateDropdown(id, values) {
+    const select = document.getElementById(id);
+    select.innerHTML = '<option value="">All</option>'; // Ajouter l'option "All" par défaut
+
+    values.forEach(value => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value.charAt(0).toUpperCase() + value.slice(1); // Majuscule initiale
+        select.appendChild(option);
+    });
+
+    select.addEventListener("change", filterMetadata);
+}
+
+function filterMetadata() {
+    const selectedLabel = document.getElementById("filter-label").value.toLowerCase();
+    const selectedSystem = document.getElementById("filter-system").value.toLowerCase();
+    const selectedCodec = document.getElementById("filter-codec").value.toLowerCase();
+    const selectedGenre = document.getElementById("filter-genre").value.toLowerCase();
+    const selectedYear = document.getElementById("filter-year").value.toLowerCase();
+
+    fetchMetadata().then(metadata => {
+        const filteredMetadata = metadata.filter(entry =>
+            (selectedLabel === "" || entry.label.toLowerCase() === selectedLabel) &&
+            (selectedSystem === "" || entry.system.toLowerCase() === selectedSystem) &&
+            (selectedCodec === "" || entry.codec.toLowerCase() === selectedCodec) &&
+            (selectedGenre === "" || entry.genre.toLowerCase() === selectedGenre) &&
+            (selectedYear === "" || entry.year.toLowerCase() === selectedYear)
+        );
+
+        displayMetadata(null, metadata, true); // Mode filtrage
+    });
+}
 
 
-function displayMetadata(files, metadata) {
-    metadataDisplay.innerHTML = ''; // Clear previous metadata
+function displayMetadata(files, metadata, filteredOnly = false) {
+    metadataDisplay.innerHTML = ''; // Nettoyer l'affichage avant de remplir
 
-    // Create a table
+    // Si on ne filtre pas et qu'aucun fichier n'est sélectionné, afficher tout
+    if (!filteredOnly && (!files || files.length === 0)) {
+        metadataDisplay.innerHTML = '<p>No files selected.</p>';
+        return;
+    }
+
+    let filteredMetadata;
+
+    if (filteredOnly) {
+        // Appliquer les filtres des drop-downs
+        const selectedLabel = document.getElementById("filter-label").value.toLowerCase();
+        const selectedSystem = document.getElementById("filter-system").value.toLowerCase();
+        const selectedCodec = document.getElementById("filter-codec").value.toLowerCase();
+        const selectedGenre = document.getElementById("filter-genre").value.toLowerCase();
+        const selectedYear = document.getElementById("filter-year").value.toLowerCase();
+
+        filteredMetadata = metadata.filter(entry =>
+            (selectedLabel === "" || entry.label.toLowerCase() === selectedLabel) &&
+            (selectedSystem === "" || entry.system.toLowerCase() === selectedSystem) &&
+            (selectedCodec === "" || entry.codec.toLowerCase() === selectedCodec) &&
+            (selectedGenre === "" || entry.genre.toLowerCase() === selectedGenre) &&
+            (selectedYear === "" || entry.year.toLowerCase() === selectedYear)
+        );
+    } else {
+        // Obtenir la liste des fichiers sélectionnés
+        const selectedFiles = Array.from(files).map(file => file.name.trim().toLowerCase());
+
+        // Filtrer les métadonnées pour ne garder que celles des fichiers sélectionnés
+        filteredMetadata = metadata.filter(entry => selectedFiles.includes(entry.filedir.trim().toLowerCase()));
+    }
+
+    // Vérifier si aucun résultat après filtrage
+    if (filteredMetadata.length === 0) {
+        metadataDisplay.innerHTML = '<p>No metadata found.</p>';
+        return;
+    }
+
+    // Création du tableau Bootstrap
     const table = document.createElement('table');
-    table.classList.add('metadata-table');
+    table.classList.add('table', 'table-striped', 'table-bordered');
 
-    // Create table headers
+    // Création de l'en-tête du tableau
     const headerRow = document.createElement('tr');
-    ['File Name', 'Extension', 'Compression Type'].forEach(headerText => {
+    Object.keys(filteredMetadata[0]).forEach(headerText => {
         const header = document.createElement('th');
-        header.textContent = headerText;
+        header.textContent = headerText.charAt(0).toUpperCase() + headerText.slice(1);
         headerRow.appendChild(header);
     });
     table.appendChild(headerRow);
 
-    // Process uploaded files
-    files.forEach(file => {
-        const fileName = file.name.toLowerCase().trim(); // Normalize case & trim spaces
-        
-        // **Normalize Metadata for Matching**
-        const fileMetadata = metadata.find(m => m.name.toLowerCase().trim() === fileName);
-
+    // Remplir le tableau avec les métadonnées filtrées
+    filteredMetadata.forEach(entry => {
         const row = document.createElement('tr');
-
-        // File Name
-        const fileNameCell = document.createElement('td');
-        fileNameCell.textContent = file.name;
-        row.appendChild(fileNameCell);
-
-        // Extension
-        const extensionCell = document.createElement('td');
-        extensionCell.textContent = fileMetadata ? fileMetadata.extension : 'N/A';
-        row.appendChild(extensionCell);
-
-        // Compression Type
-        const compressionCell = document.createElement('td');
-        compressionCell.textContent = fileMetadata ? fileMetadata.compression : 'N/A';
-        row.appendChild(compressionCell);
-
+        Object.values(entry).forEach(value => {
+            const cell = document.createElement('td');
+            cell.textContent = value;
+            row.appendChild(cell);
+        });
         table.appendChild(row);
     });
 
-    // Append table to metadata display section
+    // Ajouter le tableau à la section d'affichage des métadonnées
     metadataDisplay.appendChild(table);
 }
+
+
+document.addEventListener('DOMContentLoaded', async () => {
+    populateFilters(); // Charger les valeurs fixes dans les drop-downs
+    const metadata = await fetchMetadata();
+    displayMetadata(metadata);
+});
 
 async function uploadAudio(files) {
     if (!files || files.length === 0) {
@@ -138,7 +295,7 @@ async function uploadAudio(files) {
 
     try {
         const metadataObj = await fetchMetadata();
-        displayMetadata(filesArray, metadataObj);
+        displayMetadata(filesArray, metadataObj); // Afficher uniquement les métadonnées des fichiers sélectionnés
 
         const response = await fetch('http://127.0.0.1:8000/predict/', {
             method: 'POST',
@@ -158,20 +315,16 @@ async function uploadAudio(files) {
             resultDiv.innerHTML = `File: <b>${result.filename}</b>, Label: <b>${result.label}</b>, Confidence: <b>${result.confidence}</b>`;
             responseDiv.appendChild(resultDiv);
 
-            if (filesArray[index] instanceof Blob) {
-                const downloadLink = createDownloadLink(filesArray[index], `uploaded-audio-${index}.wav`);
-                if (downloadLink) {
-                    responseDiv.appendChild(downloadLink);
-                }
-            } else {
-                console.warn('File is not a Blob:', filesArray[index]);
-            }
+            
         });
+
     } catch (error) {
         console.error('Error:', error);
         responseDiv.textContent = 'Error: ' + error.message;
     }
 }
+
+
 
 uploadButton.addEventListener('click', () => {
     const files = audioFileInput.files;
@@ -182,66 +335,164 @@ uploadButton.addEventListener('click', () => {
     uploadAudio(files);
 });
 
+// Start Recording
 recordButton.addEventListener('click', async () => {
-    startAudioContext();
+    startAudioContext(); // Initialiser ou reprendre l'AudioContext
+  
+    console.log('Recording started');
+  
     const constraints = { audio: true, video: false };
-
+  
     try {
-        gumStream = await navigator.mediaDevices.getUserMedia(constraints);
-        input = audioContext.createMediaStreamSource(gumStream);
-        rec = new Recorder(input, { numChannels: 1 });
-        rec.record();
-
-        recordButton.disabled = true;
-        stopButton.disabled = false;
-        pauseButton.disabled = false;
+      gumStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('Microphone access granted');
+      input = audioContext.createMediaStreamSource(gumStream);
+      console.log('Audio source created');
+  
+      // Initialize Recorder.js
+      rec = new Recorder(input, { numChannels: 1 });
+      console.log('Recorder initialized');
+  
+      // Start recording
+      rec.record();
+      console.log('Recording started');
+  
+      // Update button states
+      recordButton.disabled = true;
+      stopButton.disabled = false;
+      pauseButton.disabled = false;
     } catch (error) {
-        console.error('Error accessing microphone:', error);
-        alert('Error accessing microphone: ' + error.message);
+      console.error('Error accessing microphone:', error);
+      alert('Error accessing microphone: ' + error.message);
     }
-});
+  });
+  
+
+  function stopRecording() {
+    console.log('stopRecording called');
+  
+    // Désactiver les boutons
+    stopButton.disabled = true;
+    recordButton.disabled = false;
+    pauseButton.disabled = true;
+    pauseButton.innerHTML = 'Pause';
+  
+    // Arrêter l'enregistrement
+    rec.stop();
+    console.log('Recording stopped');
+  
+    // Arrêter l'accès au microphone
+    gumStream.getAudioTracks()[0].stop();
+    console.log('Microphone access stopped');
+  
+    // Exporter l'audio en WAV
+    rec.exportWAV(async (blob) => {
+      console.log('Audio exported as WAV');
+  
+      // Vérifier la taille du fichier audio
+      if (blob.size === 0) {
+        console.error('Le fichier audio est vide.');
+        responseDiv.textContent = 'Erreur : Le fichier audio est vide.';
+        return;
+      }
+  
+      // Rééchantillonner l'audio à 16 kHz
+      try {
+        const resampledBlob = await resampleAudio(blob, 16000);
+        console.log('Audio rééchantillonné à 16 kHz');
+  
+  
+        // Envoyer l'audio rééchantillonné à l'API pour analyse
+        await sendAudioToAPI(resampledBlob); // Ajouter await ici
+      } catch (error) {
+        console.error('Erreur lors du rééchantillonnage :', error);
+        responseDiv.textContent = 'Erreur : ' + error.message;
+      }
+    });
+}
+
+async function sendAudioToAPI(blob) {
+    console.log('Sending audio to API');
+  
+    const formData = new FormData();
+    const filename = 'recorded-audio.wav'; // Nom du fichier
+    formData.append('files', blob, filename); // Utiliser 'files' comme nom de champ
+  
+    try {
+        const response = await fetch('http://127.0.0.1:8000/predict/', {
+            method: 'POST',
+            body: formData,
+        });
+  
+        console.log('API response status:', response.status);
+  
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+  
+        const data = await response.json();
+        console.log('API response data:', data);
+  
+        // Afficher le résultat de l'API
+        if (data.length > 0) {
+            responseDiv.innerHTML = `Label: <b>${data[0].label}</b>, Confidence: <b>${data[0].confidence}</b>`;
+        } else {
+            responseDiv.textContent = 'Error: No data returned from the API.';
+        }
+    } catch (error) {
+        console.error('Error sending audio to API:', error);
+        responseDiv.textContent = 'Error: ' + error.message;
+    }
+}
+  
+// Pause Recording
+pauseButton.addEventListener('click', () => {
+    if (rec.recording) {
+      // Pause recording
+      rec.stop();
+      pauseButton.textContent = 'Resume';
+    } else {
+      // Resume recording
+      rec.record();
+      pauseButton.textContent = 'Pause';
+    }
+  });
+  
 
 stopButton.addEventListener('click', () => {
     stopRecording();
 });
 
-pauseButton.addEventListener('click', () => {
-    if (rec.recording) {
-        rec.stop();
-        pauseButton.textContent = 'Resume';
-    } else {
-        rec.record();
-        pauseButton.textContent = 'Pause';
+// Ajouter un écouteur d'événement pour un clic utilisateur sur le bouton d'enregistrement
+recordButton.addEventListener('click', async () => {
+    startAudioContext(); // Initialiser ou reprendre l'AudioContext
+  
+    console.log('Recording started');
+  
+    const constraints = { audio: true, video: false };
+  
+    try {
+      gumStream = await navigator.mediaDevices.getUserMedia(constraints);
+      console.log('Microphone access granted');
+      input = audioContext.createMediaStreamSource(gumStream);
+      console.log('Audio source created');
+  
+      // Initialize Recorder.js
+      rec = new Recorder(input, { numChannels: 1 });
+      console.log('Recorder initialized');
+  
+      // Start recording
+      rec.record();
+      console.log('Recording started');
+  
+      // Update button states
+      recordButton.disabled = true;
+      stopButton.disabled = false;
+      pauseButton.disabled = false;
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      alert('Error accessing microphone: ' + error.message);
     }
-});
+  });
+  
 
-function stopRecording() {
-    stopButton.disabled = true;
-    recordButton.disabled = false;
-    pauseButton.disabled = true;
-    pauseButton.textContent = 'Pause';
-
-    rec.stop();
-    gumStream.getAudioTracks()[0].stop();
-
-    rec.exportWAV(async (blob) => {
-        if (blob.size === 0) {
-            console.error('The audio file is empty.');
-            responseDiv.textContent = 'Error: The audio file is empty.';
-            return;
-        }
-
-        try {
-            const downloadLink = createDownloadLink(blob, 'recorded-audio.wav');
-            responseDiv.innerHTML = '';
-            if (downloadLink) {
-                responseDiv.appendChild(downloadLink);
-            }
-
-            await uploadAudio([blob]);
-        } catch (error) {
-            console.error('Error processing audio:', error);
-            responseDiv.textContent = 'Error: ' + error.message;
-        }
-    });
-}

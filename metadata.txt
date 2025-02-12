@@ -1,3 +1,7 @@
-T_0000182355.flac;wav;FLAC
-T_0000000003.flac;wav;FLAC
-recorded-audio.wav;wav;PCM
+FileDir;Label;system;codec;genre;year
+T_0000000000.flac;spoof;A01;FLAC;female;2020
+T_0000000001.flac;spoof;A03;FLAC;male;2022
+T_0000000002.flac;spoof;A06;FLAC;male;2021
+T_0000000003.flac;spoof;A19;FLAC;male;2024
+T_0000000004.flac;spoof;A11;FLAC;male;2023
+T_0000182355.flac;genuine;bonafide;FLAC;male;2025
