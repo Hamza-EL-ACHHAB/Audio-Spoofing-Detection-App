@@ -55,13 +55,11 @@ You should see `myimage` listed.
 To start a container from the image:
 
 ```bash
-docker run -it -p 8080:8000 --name myimage
+docker run -it -p 8080:8000 spoof-api-v2
 ```
 
 - `-d` → Runs the container in detached mode (background).
 - `-p 8080:8000` → Maps port **8080** on your system to port **80** in the container.
-- `--name my_container` → Names the container `my_container`.
-- `myimage` → The name of your Docker image.
 
 ## 🔹 Step 6: Check if the Container is Running
 
