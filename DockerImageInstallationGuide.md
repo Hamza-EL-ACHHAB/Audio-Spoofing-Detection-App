@@ -37,7 +37,7 @@ Open a terminal or command prompt and navigate to the directory where you downlo
 Now, load the Docker image using:
 
 ```bash
-docker load -i myimage.tar
+docker load -i AASIST-api.tar
 ```
 
 ## 🔹 Step 4: Verify the Image
